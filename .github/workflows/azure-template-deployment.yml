@@ -117,24 +117,40 @@ jobs:
         run: |
           $displayName = "${{ vars.SPA_APP_DISPLAY_NAME }}"
           $customDomain = "${{ vars.CUSTOM_DOMAIN_NAME }}"
-          $redirectUris = @(
-            "https://${customDomain}/app",
-            "http://localhost:3000/app"
-          )
-          $redirectUrisJson = $redirectUris | ConvertTo-Json -Compress
+          $spaBody = @{
+            spa = @{
+              redirectUris = @(
+                "https://${customDomain}/app",
+                "http://localhost:3000/app"
+              )
+            }
+          } | ConvertTo-Json -Depth 5 -Compress
 
           # Check if app registration already exists
-          $existingApp = az ad app list --display-name $displayName --query "[0].appId" -o tsv
+          $existingApp = az ad app list --display-name $displayName --query "[0]" -o json | ConvertFrom-Json
           if ($existingApp) {
-            Write-Host "Updating existing app registration: $existingApp"
-            az ad app update --id $existingApp `
-              --spa-redirect-uris $redirectUris
+            $objectId = $existingApp.id
+            Write-Host "Updating existing app registration: $objectId"
+            az rest --method PATCH `
+              --uri "https://graph.microsoft.com/v1.0/applications/$objectId" `
+              --headers "Content-Type=application/json" `
+              --body $spaBody
           } else {
             Write-Host "Creating new app registration: $displayName"
-            az ad app create `
-              --display-name $displayName `
-              --sign-in-audience AzureADandPersonalMicrosoftAccount `
-              --spa-redirect-uris $redirectUris
+            $createBody = @{
+              displayName = $displayName
+              signInAudience = "AzureADandPersonalMicrosoftAccount"
+              spa = @{
+                redirectUris = @(
+                  "https://${customDomain}/app",
+                  "http://localhost:3000/app"
+                )
+              }
+            } | ConvertTo-Json -Depth 5 -Compress
+            az rest --method POST `
+              --uri "https://graph.microsoft.com/v1.0/applications" `
+              --headers "Content-Type=application/json" `
+              --body $createBody
           }
         shell: pwsh
 
