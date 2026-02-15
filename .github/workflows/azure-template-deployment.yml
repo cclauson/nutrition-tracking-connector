@@ -114,6 +114,7 @@ jobs:
         shell: pwsh
 
       - name: Create SPA App Registration
+        id: spa_app
         run: |
           $displayName = "${{ vars.SPA_APP_DISPLAY_NAME }}"
           $customDomain = "${{ vars.CUSTOM_DOMAIN_NAME }}"
@@ -122,6 +123,7 @@ jobs:
           $existingApp = az ad app list --display-name $displayName --query "[0]" -o json | ConvertFrom-Json
           if ($existingApp) {
             $objectId = $existingApp.id
+            $appId = $existingApp.appId
             Write-Host "Updating existing app registration: $objectId"
             @{
               spa = @{
@@ -147,14 +149,18 @@ jobs:
                 )
               }
             } | ConvertTo-Json -Depth 5 | Set-Content -Path body.json
-            az rest --method POST `
+            $result = az rest --method POST `
               --uri "https://graph.microsoft.com/v1.0/applications" `
               --headers "Content-Type=application/json" `
-              --body "@body.json"
+              --body "@body.json" | ConvertFrom-Json
+            $appId = $result.appId
           }
+          Write-Host "SPA App ID: $appId"
+          echo "APP_ID=$appId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         shell: pwsh
 
       - name: Create User Flow
+        id: user_flow
         run: |
           $tenantId = "${{ secrets.EXTERNAL_ID_TENANT_ID }}"
           $accessToken = az account get-access-token `
@@ -185,7 +191,7 @@ jobs:
               }
             } | ConvertTo-Json -Depth 10
 
-            Invoke-RestMethod `
+            $result = Invoke-RestMethod `
               -Uri "https://graph.microsoft.com/beta/identity/authenticationEventsFlows" `
               -Headers @{
                 Authorization = "Bearer $accessToken"
@@ -193,8 +199,50 @@ jobs:
               } `
               -Method Post `
               -Body $body
+            $flowId = $result.id
           } else {
             Write-Host "User flow already exists, skipping creation"
+            $flowId = $flowExists.id
+          }
+          Write-Host "User Flow ID: $flowId"
+          echo "FLOW_ID=$flowId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Link App to User Flow
+        run: |
+          $accessToken = az account get-access-token `
+            --resource-type ms-graph `
+            --query accessToken -o tsv
+
+          $flowId = "${{ steps.user_flow.outputs.FLOW_ID }}"
+          $appId = "${{ steps.spa_app.outputs.APP_ID }}"
+
+          # Check if app is already linked to the flow
+          $linkedApps = Invoke-RestMethod `
+            -Uri "https://graph.microsoft.com/beta/identity/authenticationEventsFlows/$flowId/conditions/applications/includeApplications" `
+            -Headers @{ Authorization = "Bearer $accessToken" } `
+            -Method Get
+
+          $alreadyLinked = $linkedApps.value | Where-Object { $_.appId -eq $appId }
+
+          if (-not $alreadyLinked) {
+            Write-Host "Linking app $appId to user flow $flowId"
+            $body = @{
+              "@odata.type" = "#microsoft.graph.authenticationConditionApplication"
+              appId = $appId
+            } | ConvertTo-Json
+
+            Invoke-RestMethod `
+              -Uri "https://graph.microsoft.com/beta/identity/authenticationEventsFlows/$flowId/conditions/applications/includeApplications" `
+              -Headers @{
+                Authorization = "Bearer $accessToken"
+                "Content-Type" = "application/json"
+              } `
+              -Method Post `
+              -Body $body
+            Write-Host "App linked to user flow successfully"
+          } else {
+            Write-Host "App already linked to user flow, skipping"
           }
         shell: pwsh
 
