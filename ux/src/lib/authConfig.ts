@@ -21,6 +21,7 @@ export const msalConfig: Configuration = {
     loggerOptions: {
       logLevel: LogLevel.Warning,
     },
+    iframeHashTimeout: 3000,
   },
 };
 

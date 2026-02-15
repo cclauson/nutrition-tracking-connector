@@ -5,21 +5,22 @@ import {
   PublicClientApplication,
   EventType,
   AuthenticationResult,
+  InteractionStatus,
 } from "@azure/msal-browser";
 import { MsalProvider, useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { msalConfig, loginRequest, isAuthConfigured } from "../lib/authConfig";
 
 function AuthenticatedContent({ children }: { children: ReactNode }) {
-  const { instance, accounts } = useMsal();
+  const { instance, accounts, inProgress } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
   useEffect(() => {
-    if (!isAuthenticated && accounts.length === 0) {
+    if (!isAuthenticated && accounts.length === 0 && inProgress === InteractionStatus.None) {
       instance.ssoSilent(loginRequest).catch(() => {
         instance.loginRedirect(loginRequest);
       });
     }
-  }, [isAuthenticated, accounts, instance]);
+  }, [isAuthenticated, accounts, instance, inProgress]);
 
   if (!isAuthenticated) {
     return (
