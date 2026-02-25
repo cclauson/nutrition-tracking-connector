@@ -56,6 +56,15 @@ app.get("/health", (_req, res) => {
   res.sendStatus(200);
 });
 
+app.get("/api/mcp/debug", (_req, res) => {
+  res.json({
+    mcpEnabled: !!(entraTenantId && entraClientId && proxyBaseUrl),
+    entraAuthority: entraAuthority || 'default (login.microsoftonline.com)',
+    issuerBaseURL: `${entraAuthority || `https://login.microsoftonline.com/${entraTenantId}`}/v2.0`,
+    audience: entraClientId,
+  });
+});
+
 // --- Error handler for JWT validation errors ---
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const authHeader = req.headers.authorization;

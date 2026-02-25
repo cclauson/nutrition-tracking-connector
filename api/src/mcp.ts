@@ -48,50 +48,67 @@ export function createMcpRouter(tenantId: string, entraClientId: string, proxyBa
 
   // POST - MCP messages (initialize + subsequent requests)
   mcpRouter.post('/', ...authProvider.middleware, async (req: Request, res: Response) => {
-    const method = (req.body as any)?.method;
-    console.log('MCP request:', { method, id: (req.body as any)?.id });
+    try {
+      const method = (req.body as any)?.method;
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      console.log('MCP POST:', { method, id: (req.body as any)?.id, sessionId, hasBody: !!req.body, activeSessions: sessions.size });
 
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      // Existing session
+      if (sessionId && sessions.has(sessionId)) {
+        const { transport } = sessions.get(sessionId)!;
+        await transport.handleRequest(req as any, res as any, req.body);
+        return;
+      }
 
-    // Existing session
-    if (sessionId && sessions.has(sessionId)) {
-      const { transport } = sessions.get(sessionId)!;
-      await transport.handleRequest(req as any, res as any, req.body);
-      return;
-    }
+      // New session — must be an initialize request
+      if (sessionId || !isInitializeRequest(req.body)) {
+        console.log('MCP POST rejected:', { sessionId, isInitialize: isInitializeRequest(req.body), body: JSON.stringify(req.body).slice(0, 500) });
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: { code: -32600, message: 'Bad request: expected initialize request without session ID' },
+          id: (req.body as any)?.id ?? null,
+        });
+        return;
+      }
 
-    // New session — must be an initialize request
-    if (sessionId || !isInitializeRequest(req.body)) {
-      res.status(400).json({
-        jsonrpc: '2.0',
-        error: { code: -32600, message: 'Bad request: expected initialize request without session ID' },
-        id: (req.body as any)?.id ?? null,
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
       });
-      return;
-    }
 
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-    });
+      const server = createMcpServer();
 
-    const server = createMcpServer();
+      transport.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid) {
+          console.log('MCP session closed:', sid);
+          sessions.delete(sid);
+        }
+      };
 
-    transport.onclose = () => {
-      const sid = transport.sessionId;
-      if (sid) sessions.delete(sid);
-    };
+      transport.onerror = (err) => {
+        console.error('MCP transport error:', err);
+      };
 
-    await server.connect(transport);
-    await transport.handleRequest(req as any, res as any, req.body);
+      await server.connect(transport);
+      console.log('MCP server connected, handling initialize request...');
+      await transport.handleRequest(req as any, res as any, req.body);
 
-    if (transport.sessionId) {
-      sessions.set(transport.sessionId, { transport, server });
+      if (transport.sessionId) {
+        sessions.set(transport.sessionId, { transport, server });
+        console.log('MCP session created:', transport.sessionId);
+      }
+    } catch (err) {
+      console.error('MCP POST handler error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });
+      }
     }
   });
 
   // GET - SSE stream for server-to-client notifications
   mcpRouter.get('/', ...authProvider.middleware, async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    console.log('MCP GET:', { sessionId, hasSession: sessionId ? sessions.has(sessionId) : false });
     if (!sessionId || !sessions.has(sessionId)) {
       res.status(400).json({ error: 'Invalid or missing session ID' });
       return;
@@ -103,6 +120,7 @@ export function createMcpRouter(tenantId: string, entraClientId: string, proxyBa
   // DELETE - session termination
   mcpRouter.delete('/', ...authProvider.middleware, async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    console.log('MCP DELETE:', { sessionId });
     if (!sessionId || !sessions.has(sessionId)) {
       res.status(400).json({ error: 'Invalid or missing session ID' });
       return;
