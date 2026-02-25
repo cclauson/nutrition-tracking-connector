@@ -11,3 +11,42 @@ model Item {
   id   Int    @id @default(autoincrement())
   name String
 }
+
+enum Resolution {
+  daily
+  timestamped
+}
+
+enum MetricType {
+  numeric
+  checkin
+}
+
+model Metric {
+  id         String        @id @default(uuid())
+  userId     String
+  name       String
+  unit       String?
+  resolution Resolution
+  type       MetricType
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  entries    MetricEntry[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model MetricEntry {
+  id        String   @id @default(uuid())
+  metricId  String
+  metric    Metric   @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  value     Float?
+  date      String
+  timestamp DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([metricId, date])
+  @@index([metricId, date])
+}

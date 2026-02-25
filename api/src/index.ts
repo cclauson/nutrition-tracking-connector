@@ -16,7 +16,7 @@ const proxyBaseUrl = process.env.PROXY_BASE_URL;
 const entraAuthority = process.env.ENTRA_AUTHORITY;
 
 if (entraTenantId && entraClientId && proxyBaseUrl) {
-  const { mcpRouter, wellKnownRouter } = createMcpRouter(entraTenantId, entraClientId, proxyBaseUrl, entraAuthority);
+  const { mcpRouter, wellKnownRouter } = createMcpRouter(entraTenantId, entraClientId, proxyBaseUrl, prisma, entraAuthority);
 
   // .well-known must be at the origin root (RFC 8615)
   app.use("/.well-known", wellKnownRouter);
