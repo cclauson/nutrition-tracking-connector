@@ -5,6 +5,7 @@ param applicationInsightsName string
 param postgresServerName string
 @secure()
 param postgresAdminPassword string
+param dnsZoneName string
 
 module monitoring 'modules/monitoring.bicep' = {
   name: 'monitoringDeployment'
@@ -38,5 +39,13 @@ module postgresql 'modules/postgresql.bicep' = {
   }
 }
 
+module dnsZone 'modules/dns-zone.bicep' = {
+  name: 'dnsZoneDeployment'
+  params: {
+    zoneName: dnsZoneName
+  }
+}
+
 output acrLoginServer string = acr.outputs.acrLoginServer
 output aksName string = aks.outputs.aksName
+output dnsNameServers array = dnsZone.outputs.nameServers

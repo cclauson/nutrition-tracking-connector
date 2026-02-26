@@ -49,7 +49,20 @@ jobs:
                          logAnalyticsWorkspaceName=${{ steps.unique_names.outputs.logAnalyticsWorkspaceName }} `
                          applicationInsightsName=${{ steps.unique_names.outputs.applicationInsightsName }} `
                          postgresServerName=${{ steps.unique_names.outputs.postgresServerName }} `
-                         postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+                         postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }} `
+                         dnsZoneName=${{ vars.DNS_ZONE_NAME }}
+        shell: pwsh
+
+      - name: Print DNS Zone Name Servers
+        run: |
+          $deployment = az deployment group show `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --name azure-resources `
+            --query "properties.outputs.dnsNameServers.value" `
+            -o json | ConvertFrom-Json
+          Write-Host "=== DNS Zone Name Servers ==="
+          Write-Host "Configure these NS records at your domain registrar:"
+          $deployment | ForEach-Object { Write-Host "  $_" }
         shell: pwsh
 
       - name: Install NGINX Ingress Controller
@@ -84,7 +97,7 @@ jobs:
           $subdomain = "${{ vars.CUSTOM_DOMAIN_NAME }}".Split('.')[0]
           $afdHostName = "${{ steps.unique_names.outputs.frontDoorEndpointName }}.z01.azurefd.net"
           az network dns record-set cname set-record `
-            --resource-group ${{ vars.DNS_ZONE_RESOURCE_GROUP }} `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
             --zone-name ${{ vars.DNS_ZONE_NAME }} `
             --record-set-name $subdomain `
             --cname $afdHostName
@@ -100,7 +113,7 @@ jobs:
             -FrontDoorProfileName MyFrontDoor `
             -CustomDomainName $afdCustomDomainName `
             -DnsZoneName ${{ vars.DNS_ZONE_NAME }} `
-            -DnsZoneResourceGroup ${{ vars.DNS_ZONE_RESOURCE_GROUP }} `
+            -DnsZoneResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
             -Subdomain $subdomain
         shell: pwsh
 
