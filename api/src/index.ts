@@ -57,23 +57,12 @@ app.get("/health", (_req, res) => {
 });
 
 // --- Error handler for JWT validation errors ---
-app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const authHeader = req.headers.authorization;
-  let tokenClaims: any = null;
-  if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const parts = authHeader.slice(7).split('.');
-      if (parts.length === 3) {
-        tokenClaims = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-      }
-    } catch { /* ignore decode errors */ }
-  }
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Auth error:', {
     name: err.name,
     message: err.message,
     code: err.code,
     status: err.status,
-    tokenClaims,
   });
   res.status(err.status || 401).json({
     error: err.message,
