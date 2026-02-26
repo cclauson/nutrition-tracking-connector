@@ -130,11 +130,11 @@ jobs:
 
       - name: Deploy Azure Resources
         run: |
+          $acrLoginServer = "${{ steps.unique_names.outputs.acrName }}.azurecr.io"
           az deployment group create `
             --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
             --template-file ./templates/azure-resources.bicep `
             --parameters acrName=${{ steps.unique_names.outputs.acrName }} `
-                         aksName=${{ steps.unique_names.outputs.aksName }} `
                          logAnalyticsWorkspaceName=${{ steps.unique_names.outputs.logAnalyticsWorkspaceName }} `
                          applicationInsightsName=${{ steps.unique_names.outputs.applicationInsightsName }} `
                          postgresServerName=${{ steps.unique_names.outputs.postgresServerName }} `
@@ -146,7 +146,9 @@ jobs:
                          proxyEntraTenantId=${{ secrets.EXTERNAL_ID_TENANT_ID }} `
                          proxyEntraClientId=${{ steps.proxy_app.outputs.APP_ID }} `
                          proxyEntraClientSecret=${{ steps.proxy_app.outputs.CLIENT_SECRET }} `
-                         proxyEntraAuthority="https://${{ vars.EXTERNAL_ID_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ secrets.EXTERNAL_ID_TENANT_ID }}"
+                         proxyEntraAuthority="https://${{ vars.EXTERNAL_ID_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ secrets.EXTERNAL_ID_TENANT_ID }}" `
+                         apiImage="${acrLoginServer}/vnext-api:init" `
+                         uxImage="${acrLoginServer}/vnext-ux:init"
         shell: pwsh
 
       - name: Force New Auth Proxy Revision
@@ -172,21 +174,32 @@ jobs:
           $deployment | ForEach-Object { Write-Host "  $_" }
         shell: pwsh
 
-      - name: Install NGINX Ingress Controller
+      - name: Get Container App FQDNs
+        id: container_apps
         run: |
-          ./tools/InstallNginxIngress.ps1 `
-            -ResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
-            -AksName ${{ steps.unique_names.outputs.aksName }}
-        shell: pwsh
+          $apiAppFqdn = az deployment group show `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --name azure-resources `
+            --query "properties.outputs.apiContainerAppFqdn.value" `
+            -o tsv
+          Write-Host "API Container App FQDN: $apiAppFqdn"
+          echo "API_FQDN=$apiAppFqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Get NGINX Ingress External IP
-        id: nginx_ip
-        run: |
-          $externalIp = kubectl get svc ingress-nginx-controller `
-              --namespace ingress-nginx `
-              -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-          Write-Host "NGINX Ingress external IP: $externalIp"
-          echo "NGINX_IP=$externalIp" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $uxAppFqdn = az deployment group show `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --name azure-resources `
+            --query "properties.outputs.uxContainerAppFqdn.value" `
+            -o tsv
+          Write-Host "UX Container App FQDN: $uxAppFqdn"
+          echo "UX_FQDN=$uxAppFqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          $authAppFqdn = az deployment group show `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --name azure-resources `
+            --query "properties.outputs.authProxyContainerAppFqdn.value" `
+            -o tsv
+          Write-Host "Auth Proxy Container App FQDN: $authAppFqdn"
+          echo "AUTH_FQDN=$authAppFqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         shell: pwsh
 
       - name: Deploy Front Door
@@ -195,96 +208,59 @@ jobs:
             --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
             --template-file ./templates/front-door-resources.bicep `
             --parameters endpointName=${{ steps.unique_names.outputs.frontDoorEndpointName }} `
-                         customDomainName=${{ vars.CUSTOM_DOMAIN_NAME }} `
-                         originHostName=${{ steps.nginx_ip.outputs.NGINX_IP }}
+                         appCustomDomainName=${{ vars.CUSTOM_DOMAIN_NAME }} `
+                         authCustomDomainName=${{ vars.PROXY_CUSTOM_DOMAIN_NAME }} `
+                         apiOriginHostName=${{ steps.container_apps.outputs.API_FQDN }} `
+                         uxOriginHostName=${{ steps.container_apps.outputs.UX_FQDN }} `
+                         authOriginHostName=${{ steps.container_apps.outputs.AUTH_FQDN }}
         shell: pwsh
 
-      - name: Create CNAME Record
+      - name: Create CNAME Records
         run: |
-          $subdomain = "${{ vars.CUSTOM_DOMAIN_NAME }}".Split('.')[0]
           $afdHostName = "${{ steps.unique_names.outputs.frontDoorEndpointName }}.z01.azurefd.net"
+
+          # App subdomain CNAME (e.g. app → AFD)
+          $appSubdomain = "${{ vars.CUSTOM_DOMAIN_NAME }}".Split('.')[0]
           az network dns record-set cname set-record `
             --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
             --zone-name ${{ vars.DNS_ZONE_NAME }} `
-            --record-set-name $subdomain `
+            --record-set-name $appSubdomain `
+            --cname $afdHostName
+
+          # Auth subdomain CNAME (e.g. auth → AFD)
+          $authSubdomain = "${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}".Split('.')[0]
+          az network dns record-set cname set-record `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --zone-name ${{ vars.DNS_ZONE_NAME }} `
+            --record-set-name $authSubdomain `
             --cname $afdHostName
         shell: pwsh
 
       - name: Configure AFD Custom Domain DNS Validation
         run: |
-          $customDomain = "${{ vars.CUSTOM_DOMAIN_NAME }}"
-          $afdCustomDomainName = $customDomain -replace '\.', '-'
-          $subdomain = $customDomain.Split('.')[0]
+          # Validate app custom domain
+          $appCustomDomain = "${{ vars.CUSTOM_DOMAIN_NAME }}"
+          $appAfdDomainName = $appCustomDomain -replace '\.', '-'
+          $appSubdomain = $appCustomDomain.Split('.')[0]
           ./tools/SetAfdDnsValidation.ps1 `
             -ResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
             -FrontDoorProfileName MyFrontDoor `
-            -CustomDomainName $afdCustomDomainName `
+            -CustomDomainName $appAfdDomainName `
             -DnsZoneName ${{ vars.DNS_ZONE_NAME }} `
             -DnsZoneResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
-            -Subdomain $subdomain
-        shell: pwsh
+            -Subdomain $appSubdomain
 
-      - name: Get Container App FQDN
-        id: container_app
-        run: |
-          $fqdn = az deployment group show `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --name azure-resources `
-            --query "properties.outputs.containerAppFqdn.value" `
-            -o tsv
-          Write-Host "Container App FQDN: $fqdn"
-          echo "FQDN=$fqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          $verificationId = az containerapp show `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --name auth-proxy `
-            --query "properties.customDomainVerificationId" `
-            -o tsv
-          Write-Host "Domain Verification ID: $verificationId"
-          echo "VERIFICATION_ID=$verificationId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          $envName = az containerapp show `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --name auth-proxy `
-            --query "properties.managedEnvironmentId" `
-            -o tsv
-          $envName = $envName.Split('/')[-1]
-          echo "ENV_NAME=$envName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        shell: pwsh
-
-      - name: Create Auth Proxy DNS Records
-        run: |
-          $customDomain = "${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}"
-          $subdomain = $customDomain.Split('.')[0]
-
-          # CNAME record: auth → ACA FQDN
-          az network dns record-set cname set-record `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --zone-name ${{ vars.DNS_ZONE_NAME }} `
-            --record-set-name $subdomain `
-            --cname ${{ steps.container_app.outputs.FQDN }}
-
-          # TXT record: asuid.auth → domain verification ID
-          az network dns record-set txt add-record `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --zone-name ${{ vars.DNS_ZONE_NAME }} `
-            --record-set-name "asuid.$subdomain" `
-            --value ${{ steps.container_app.outputs.VERIFICATION_ID }}
-        shell: pwsh
-
-      - name: Bind Custom Domain to Container App
-        run: |
-          $customDomain = "${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}"
-          az containerapp hostname add `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --name auth-proxy `
-            --hostname $customDomain
-          az containerapp hostname bind `
-            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
-            --name auth-proxy `
-            --hostname $customDomain `
-            --environment ${{ steps.container_app.outputs.ENV_NAME }} `
-            --validation-method CNAME
+          # Validate auth custom domain
+          $authCustomDomain = "${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}"
+          $authAfdDomainName = $authCustomDomain -replace '\.', '-'
+          $authSubdomain = $authCustomDomain.Split('.')[0]
+          ./tools/SetAfdDnsValidation.ps1 `
+            -ResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
+            -FrontDoorProfileName MyFrontDoor `
+            -CustomDomainName $authAfdDomainName `
+            -DnsZoneName ${{ vars.DNS_ZONE_NAME }} `
+            -DnsZoneResourceGroup ${{ vars.AZURE_RESOURCE_GROUP }} `
+            -Subdomain $authSubdomain
         shell: pwsh
 
       - name: Login to External ID Tenant
@@ -602,8 +578,3 @@ jobs:
           azure-deploy-client-secret: ${{ secrets.AZURE_DEPLOY_CLIENT_SECRET }}
           azure-deploy-subscription-id: ${{ secrets.AZURE_DEPLOY_SUBSCRIPTION_ID }}
           azure-deploy-tenant-id: ${{ secrets.AZURE_DEPLOY_TENANT_ID }}
-
-      - name: Create App Namespace
-        run: |
-          kubectl apply -f ./k8s/namespace.yaml
-        shell: pwsh

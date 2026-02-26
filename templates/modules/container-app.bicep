@@ -1,75 +1,58 @@
-param containerAppEnvName string
-param logAnalyticsWorkspaceName string
-param proxyImage string
-param proxyBaseUrl string
-param proxyEntraTenantId string
-param proxyEntraClientId string
-@secure()
-param proxyEntraClientSecret string
-param proxyEntraAuthority string
+param containerAppName string
+param containerAppEnvId string
+param image string
+param envVars array
+param secrets array = []
+param minReplicas int = 1
+param maxReplicas int = 1
+param targetPort int = 3000
+param registryServer string = ''
+param registryIdentity string = ''
 param location string = resourceGroup().location
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
-  name: logAnalyticsWorkspaceName
-}
-
-resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: containerAppEnvName
-  location: location
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalyticsWorkspace.properties.customerId
-        sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
-      }
-    }
+var registries = registryServer != '' ? [
+  {
+    server: registryServer
+    identity: registryIdentity
   }
-}
+] : []
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'auth-proxy'
+  name: containerAppName
   location: location
+  identity: registryServer != '' ? {
+    type: 'SystemAssigned'
+  } : null
   properties: {
-    managedEnvironmentId: containerAppEnv.id
+    managedEnvironmentId: containerAppEnvId
     configuration: {
       ingress: {
         external: true
-        targetPort: 3000
+        targetPort: targetPort
       }
-      secrets: [
-        {
-          name: 'entra-client-secret'
-          value: proxyEntraClientSecret
-        }
-      ]
+      secrets: secrets
+      registries: registries
     }
     template: {
       containers: [
         {
-          name: 'auth-proxy'
-          image: proxyImage
+          name: containerAppName
+          image: image
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
-          env: [
-            { name: 'PORT', value: '3000' }
-            { name: 'ENTRA_TENANT_ID', value: proxyEntraTenantId }
-            { name: 'ENTRA_CLIENT_ID', value: proxyEntraClientId }
-            { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
-            { name: 'PROXY_BASE_URL', value: proxyBaseUrl }
-            { name: 'ENTRA_AUTHORITY', value: proxyEntraAuthority }
-          ]
+          env: envVars
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 1
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
       }
     }
   }
 }
 
-output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
-output containerAppName string = containerApp.name
+output fqdn string = containerApp.properties.configuration.ingress.fqdn
+output name string = containerApp.name
+output principalId string = registryServer != '' ? containerApp.identity.principalId : ''

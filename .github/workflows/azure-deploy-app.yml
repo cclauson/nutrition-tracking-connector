@@ -105,57 +105,53 @@ jobs:
             -t "$TAG" ./ux
           docker push "$TAG"
 
-      - name: Get AKS Credentials
+      - name: Get API Container App FQDN
+        id: api_container
         run: |
-          az aks get-credentials \
+          API_FQDN=$(az containerapp show \
             --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-            --name ${{ steps.unique_names.outputs.aksName }} \
-            --overwrite-existing
+            --name vnext-api \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "API_FQDN=$API_FQDN" >> $GITHUB_OUTPUT
 
-      - name: Deploy to AKS
+      - name: Update API Container App
         run: |
-          kubectl apply -f ./k8s/namespace.yaml
-          sed -e "s|__ACR_LOGIN_SERVER__|${{ steps.acr_info.outputs.ACR_LOGIN_SERVER }}|g" \
-              -e "s|__TAG__|${{ github.sha }}|g" \
-              -e "s|__APPINSIGHTS_CONNECTION_STRING__|${{ steps.appinsights.outputs.CONNECTION_STRING }}|g" \
-              -e "s|__DATABASE_URL__|${{ steps.postgres.outputs.DATABASE_URL }}|g" \
-              -e "s|__ENTRA_TENANT_ID__|${{ secrets.EXTERNAL_ID_TENANT_ID }}|g" \
-              -e "s|__ENTRA_CLIENT_ID__|${{ steps.api_app.outputs.APP_ID }}|g" \
-              -e "s|__PROXY_BASE_URL__|https://${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}|g" \
-              -e "s|__ENTRA_AUTHORITY__|${{ steps.spa_app.outputs.AUTHORITY }}|g" \
-              ./k8s/api-deployment.yaml | kubectl apply -f -
-          sed -e "s|__ACR_LOGIN_SERVER__|${{ steps.acr_info.outputs.ACR_LOGIN_SERVER }}|g" \
-              -e "s|__TAG__|${{ github.sha }}|g" \
-              -e "s|__APPINSIGHTS_CONNECTION_STRING__|${{ steps.appinsights.outputs.CONNECTION_STRING }}|g" \
-              ./k8s/ux-deployment.yaml | kubectl apply -f -
-          kubectl apply -f ./k8s/api-service.yaml
-          kubectl apply -f ./k8s/ux-service.yaml
-          kubectl apply -f ./k8s/api-hpa.yaml
-          kubectl apply -f ./k8s/ux-hpa.yaml
-          kubectl apply -f ./k8s/ingress.yaml
+          az containerapp update \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name vnext-api \
+            --image "${{ steps.acr_info.outputs.ACR_LOGIN_SERVER }}/vnext-api:${{ github.sha }}" \
+            --set-env-vars \
+              "PORT=3000" \
+              "DATABASE_URL=${{ steps.postgres.outputs.DATABASE_URL }}" \
+              "ENTRA_TENANT_ID=${{ secrets.EXTERNAL_ID_TENANT_ID }}" \
+              "ENTRA_CLIENT_ID=${{ steps.api_app.outputs.APP_ID }}" \
+              "PROXY_BASE_URL=https://${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}" \
+              "ENTRA_AUTHORITY=${{ steps.spa_app.outputs.AUTHORITY }}" \
+              "APPLICATIONINSIGHTS_CONNECTION_STRING=${{ steps.appinsights.outputs.CONNECTION_STRING }}"
 
-      - name: Wait for Rollouts
+      - name: Update UX Container App
         run: |
-          kubectl rollout status deployment/vnext-api -n vnext-app --timeout=300s
-          kubectl rollout status deployment/vnext-ux -n vnext-app --timeout=300s
+          az containerapp update \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name vnext-ux \
+            --image "${{ steps.acr_info.outputs.ACR_LOGIN_SERVER }}/vnext-ux:${{ github.sha }}" \
+            --set-env-vars \
+              "PORT=3000" \
+              "INTERNAL_API_URL=https://${{ steps.api_container.outputs.API_FQDN }}" \
+              "APPLICATIONINSIGHTS_CONNECTION_STRING=${{ steps.appinsights.outputs.CONNECTION_STRING }}"
 
-      - name: Debug Rollout Failure
-        if: failure()
+      - name: Wait for Revisions
         run: |
-          echo "=== Pod Status ==="
-          kubectl get pods -n vnext-app -o wide
-          echo ""
-          echo "=== Node Resources ==="
-          kubectl top nodes || true
-          echo ""
-          echo "=== Pod Descriptions ==="
-          kubectl describe pods -n vnext-app
-          echo ""
-          echo "=== Recent Pod Logs (API) ==="
-          kubectl logs -n vnext-app -l app=vnext-api --tail=50 --all-containers || true
-          echo ""
-          echo "=== Recent Pod Logs (UX) ==="
-          kubectl logs -n vnext-app -l app=vnext-ux --tail=50 --all-containers || true
-          echo ""
-          echo "=== Events ==="
-          kubectl get events -n vnext-app --sort-by='.lastTimestamp'
+          echo "Waiting for API container app revision..."
+          az containerapp revision list \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name vnext-api \
+            --query "[?properties.runningState=='Running'].name" -o tsv
+
+          echo "Waiting for UX container app revision..."
+          az containerapp revision list \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name vnext-ux \
+            --query "[?properties.runningState=='Running'].name" -o tsv
+
+          echo "Deployment complete."

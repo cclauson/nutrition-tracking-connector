@@ -11,9 +11,6 @@ outputs:
   acrName:
     description: "The name of the Azure Container Registry"
     value: ${{ steps.create_unique_names.outputs.ACR_NAME }}
-  aksName:
-    description: "The name of the AKS cluster"
-    value: ${{ steps.create_unique_names.outputs.AKS_NAME }}
   frontDoorEndpointName:
     description: "The name of the Front Door endpoint"
     value: ${{ steps.create_unique_names.outputs.FRONT_DOOR_ENDPOINT_NAME }}
@@ -41,8 +38,6 @@ runs:
         echo "UNIQUE_STRING=$uniqueString" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         $acrName="acr${uniqueString}"
         echo "ACR_NAME=$acrName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        $aksName="aks-${uniqueString}"
-        echo "AKS_NAME=$aksName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         $frontDoorEndpointName="afd-${uniqueString}"
         echo "FRONT_DOOR_ENDPOINT_NAME=$frontDoorEndpointName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         $logAnalyticsWorkspaceName="law-${uniqueString}"
