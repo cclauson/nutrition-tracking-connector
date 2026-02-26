@@ -149,6 +149,17 @@ jobs:
                          proxyEntraAuthority="https://${{ vars.EXTERNAL_ID_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ secrets.EXTERNAL_ID_TENANT_ID }}"
         shell: pwsh
 
+      - name: Force New Auth Proxy Revision
+        run: |
+          # ACA doesn't create a new revision when only secret values change.
+          # Force one so the container picks up the fresh client secret.
+          $suffix = "deploy-" + (Get-Date -Format "yyyyMMddHHmmss")
+          az containerapp update `
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} `
+            --name auth-proxy `
+            --revision-suffix $suffix
+        shell: pwsh
+
       - name: Print DNS Zone Name Servers
         run: |
           $deployment = az deployment group show `
