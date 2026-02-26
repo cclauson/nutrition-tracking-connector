@@ -201,6 +201,44 @@ jobs:
           echo "AUTH_FQDN=$authAppFqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         shell: pwsh
 
+      - name: Clean Up Old Front Door Resources
+        run: |
+          # Remove legacy routes/origins that conflict with the new 3-origin config.
+          # Bicep incremental mode doesn't delete resources removed from the template.
+          $profileName = "MyFrontDoor"
+          $rg = "${{ vars.AZURE_RESOURCE_GROUP }}"
+
+          # Delete old route if it exists
+          az afd route delete `
+            --resource-group $rg `
+            --profile-name $profileName `
+            --endpoint-name ${{ steps.unique_names.outputs.frontDoorEndpointName }} `
+            --route-name MyRoute --yes 2>$null
+
+          # Delete old origin (must delete before origin group)
+          az afd origin delete `
+            --resource-group $rg `
+            --profile-name $profileName `
+            --origin-group-name MyOriginGroup `
+            --origin-name MyOrigin --yes 2>$null
+
+          # Delete old origin group
+          az afd origin-group delete `
+            --resource-group $rg `
+            --profile-name $profileName `
+            --origin-group-name MyOriginGroup --yes 2>$null
+
+          # Delete old custom domain resource if it exists
+          $oldDomainName = "${{ vars.CUSTOM_DOMAIN_NAME }}" -replace '\.', '-'
+          az afd custom-domain delete `
+            --resource-group $rg `
+            --profile-name $profileName `
+            --custom-domain-name $oldDomainName --yes 2>$null
+
+          Write-Host "Old Front Door resources cleaned up"
+        shell: pwsh
+        continue-on-error: true
+
       - name: Deploy Front Door
         run: |
           az deployment group create `
