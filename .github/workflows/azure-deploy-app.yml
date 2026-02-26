@@ -121,7 +121,7 @@ jobs:
               -e "s|__DATABASE_URL__|${{ steps.postgres.outputs.DATABASE_URL }}|g" \
               -e "s|__ENTRA_TENANT_ID__|${{ secrets.EXTERNAL_ID_TENANT_ID }}|g" \
               -e "s|__ENTRA_CLIENT_ID__|${{ steps.api_app.outputs.APP_ID }}|g" \
-              -e "s|__PROXY_BASE_URL__|${{ vars.MCP_PROXY_BASE_URL }}|g" \
+              -e "s|__PROXY_BASE_URL__|https://${{ vars.PROXY_CUSTOM_DOMAIN_NAME }}|g" \
               -e "s|__ENTRA_AUTHORITY__|${{ steps.spa_app.outputs.AUTHORITY }}|g" \
               ./k8s/api-deployment.yaml | kubectl apply -f -
           sed -e "s|__ACR_LOGIN_SERVER__|${{ steps.acr_info.outputs.ACR_LOGIN_SERVER }}|g" \

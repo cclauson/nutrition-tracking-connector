@@ -6,6 +6,14 @@ param postgresServerName string
 @secure()
 param postgresAdminPassword string
 param dnsZoneName string
+param containerAppEnvName string
+param proxyImage string
+param proxyBaseUrl string
+param proxyEntraTenantId string
+param proxyEntraClientId string
+@secure()
+param proxyEntraClientSecret string
+param proxyEntraAuthority string
 
 module monitoring 'modules/monitoring.bicep' = {
   name: 'monitoringDeployment'
@@ -46,6 +54,24 @@ module dnsZone 'modules/dns-zone.bicep' = {
   }
 }
 
+module containerApp 'modules/container-app.bicep' = {
+  name: 'containerAppDeployment'
+  params: {
+    containerAppEnvName: containerAppEnvName
+    logAnalyticsWorkspaceName: logAnalyticsWorkspaceName
+    proxyImage: proxyImage
+    proxyBaseUrl: proxyBaseUrl
+    proxyEntraTenantId: proxyEntraTenantId
+    proxyEntraClientId: proxyEntraClientId
+    proxyEntraClientSecret: proxyEntraClientSecret
+    proxyEntraAuthority: proxyEntraAuthority
+  }
+  dependsOn: [
+    monitoring
+  ]
+}
+
 output acrLoginServer string = acr.outputs.acrLoginServer
 output aksName string = aks.outputs.aksName
 output dnsNameServers array = dnsZone.outputs.nameServers
+output containerAppFqdn string = containerApp.outputs.containerAppFqdn
