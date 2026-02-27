@@ -422,20 +422,29 @@ jobs:
               -Body $body
             $flowId = $result.id
           } else {
-            Write-Host "User flow already exists, updating identity providers"
             $flowId = $flowExists.id
 
-            # Update the user flow's identity providers to include any new social providers
-            $updateBody = @{
-              "@odata.type" = "#microsoft.graph.onAuthenticationMethodLoadStartExternalUsersSelfServiceSignUp"
-              identityProviders = $identityProviders
-            } | ConvertTo-Json -Depth 10
+            if ($socialProviders.Count -gt 0) {
+              Write-Host "User flow already exists, adding social providers via $ref"
+              foreach ($sp in $socialProviders) {
+                try {
+                  $refBody = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/identity/identityProviders/$($sp.id)"
+                  } | ConvertTo-Json
 
-            Invoke-RestMethod `
-              -Uri "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/$flowId/microsoft.graph.externalUsersSelfServiceSignUpEventsFlow/onAuthenticationMethodLoadStart" `
-              -Headers ($headers + @{ "Content-Type" = "application/json" }) `
-              -Method Patch `
-              -Body $updateBody
+                  Invoke-RestMethod `
+                    -Uri "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/$flowId/microsoft.graph.externalUsersSelfServiceSignUpEventsFlow/onAuthenticationMethodLoadStart/identityProviders/`$ref" `
+                    -Headers ($headers + @{ "Content-Type" = "application/json" }) `
+                    -Method Post `
+                    -Body $refBody
+                  Write-Host "  Added $($sp.displayName) to user flow"
+                } catch {
+                  Write-Host "  $($sp.displayName) may already be linked: $_"
+                }
+              }
+            } else {
+              Write-Host "User flow already exists, no social providers to add"
+            }
           }
           Write-Host "User Flow ID: $flowId"
           echo "FLOW_ID=$flowId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
