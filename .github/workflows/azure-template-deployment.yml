@@ -363,10 +363,43 @@ jobs:
             --resource-type ms-graph `
             --query accessToken -o tsv
 
+          $headers = @{ Authorization = "Bearer $accessToken" }
+
+          # Discover social identity providers configured in the tenant
+          $socialProviders = @()
+          try {
+            $idps = Invoke-RestMethod `
+              -Uri "https://graph.microsoft.com/v1.0/identity/identityProviders" `
+              -Headers $headers `
+              -Method Get
+            $socialProviders = $idps.value | Where-Object {
+              $_."@odata.type" -eq "#microsoft.graph.socialIdentityProvider"
+            }
+            if ($socialProviders) {
+              Write-Host "Found social identity providers: $(($socialProviders | ForEach-Object { $_.displayName }) -join ', ')"
+            }
+          } catch {
+            Write-Host "Could not query identity providers: $_"
+          }
+
+          # Build identity providers list: always include email/password
+          $identityProviders = @(
+            @{
+              "@odata.type" = "#microsoft.graph.builtInIdentityProvider"
+              id = "EmailPassword-OAUTH"
+            }
+          )
+          foreach ($sp in $socialProviders) {
+            $identityProviders += @{
+              "@odata.type" = "#microsoft.graph.socialIdentityProvider"
+              id = $sp.id
+            }
+          }
+
           # Check if user flow already exists
           $existingFlows = Invoke-RestMethod `
             -Uri "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" `
-            -Headers @{ Authorization = "Bearer $accessToken" } `
+            -Headers $headers `
             -Method Get
 
           $flowExists = $existingFlows.value | Where-Object { $_.displayName -eq "Sign up and sign in" }
@@ -378,27 +411,31 @@ jobs:
               displayName = "Sign up and sign in"
               onAuthenticationMethodLoadStart = @{
                 "@odata.type" = "#microsoft.graph.onAuthenticationMethodLoadStartExternalUsersSelfServiceSignUp"
-                identityProviders = @(
-                  @{
-                    "@odata.type" = "#microsoft.graph.builtInIdentityProvider"
-                    id = "EmailPassword-OAUTH"
-                  }
-                )
+                identityProviders = $identityProviders
               }
             } | ConvertTo-Json -Depth 10
 
             $result = Invoke-RestMethod `
               -Uri "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" `
-              -Headers @{
-                Authorization = "Bearer $accessToken"
-                "Content-Type" = "application/json"
-              } `
+              -Headers ($headers + @{ "Content-Type" = "application/json" }) `
               -Method Post `
               -Body $body
             $flowId = $result.id
           } else {
-            Write-Host "User flow already exists, skipping creation"
+            Write-Host "User flow already exists, updating identity providers"
             $flowId = $flowExists.id
+
+            # Update the user flow's identity providers to include any new social providers
+            $updateBody = @{
+              "@odata.type" = "#microsoft.graph.onAuthenticationMethodLoadStartExternalUsersSelfServiceSignUp"
+              identityProviders = $identityProviders
+            } | ConvertTo-Json -Depth 10
+
+            Invoke-RestMethod `
+              -Uri "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/$flowId/microsoft.graph.externalUsersSelfServiceSignUpEventsFlow/onAuthenticationMethodLoadStart" `
+              -Headers ($headers + @{ "Content-Type" = "application/json" }) `
+              -Method Patch `
+              -Body $updateBody
           }
           Write-Host "User Flow ID: $flowId"
           echo "FLOW_ID=$flowId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
