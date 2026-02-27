@@ -2,13 +2,13 @@ import { auth } from 'express-oauth2-jwt-bearer';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Request, Response, RequestHandler } from 'express';
 
-export interface EntraProxyProvider {
+export interface EntraAuthProvider {
   middleware: RequestHandler[];
   handleProtectedResourceMetadata(req: Request, res: Response): void;
   handleAuthServerMetadata(req: Request, res: Response): void;
 }
 
-export function createEntraProxyProvider(tenantId: string, entraClientId: string, proxyBaseUrl: string, entraAuthority?: string): EntraProxyProvider {
+export function createEntraAuthProvider(tenantId: string, entraClientId: string, proxyBaseUrl: string, entraAuthority?: string): EntraAuthProvider {
   const issuerBaseURL = `${entraAuthority || `https://login.microsoftonline.com/${tenantId}`}/v2.0`;
   const resource = `api://${entraClientId}`;
 

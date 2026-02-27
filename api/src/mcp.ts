@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { createEntraProxyProvider } from './auth/entra-proxy.js';
+import { createEntraAuthProvider } from './auth/entra-auth.js';
 
 const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: McpServer }>();
 
@@ -198,7 +198,7 @@ export function createMcpRouter(tenantId: string, entraClientId: string, proxyBa
   mcpRouter: Router;
   wellKnownRouter: Router;
 } {
-  const authProvider = createEntraProxyProvider(tenantId, entraClientId, proxyBaseUrl, entraAuthority);
+  const authProvider = createEntraAuthProvider(tenantId, entraClientId, proxyBaseUrl, entraAuthority);
 
   // .well-known endpoints (no auth) — mounted at root by the caller
   const wellKnownRouter = Router();
