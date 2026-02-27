@@ -27,14 +27,18 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: containerAppEnvId
     configuration: {
-      activeRevisionsMode: stickySessionsAffinity == 'sticky' ? 'multiple' : 'single'
-      ingress: {
-        external: true
-        targetPort: targetPort
-        stickySessions: {
-          affinity: stickySessionsAffinity
-        }
-      }
+      activeRevisionsMode: 'Single'
+      ingress: union(
+        {
+          external: true
+          targetPort: targetPort
+        },
+        stickySessionsAffinity == 'sticky' ? {
+          stickySessions: {
+            affinity: 'sticky'
+          }
+        } : {}
+      )
       secrets: secrets
       registries: registries
     }
