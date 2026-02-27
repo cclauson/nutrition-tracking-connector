@@ -45,4 +45,13 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-0
   }
 }
 
+resource proxyDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-12-01' = {
+  parent: postgresServer
+  name: 'proxydb'
+  properties: {
+    charset: 'UTF8'
+    collation: 'en_US.utf8'
+  }
+}
+
 output fqdn string = postgresServer.properties.fullyQualifiedDomainName

@@ -84,6 +84,8 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
 }
 
 // Auth Proxy Container App (GHCR image, no ACR)
+var proxyDatabaseUrl = 'postgresql://pgadmin:${postgresAdminPassword}@${postgresql.outputs.fqdn}:5432/proxydb?sslmode=require'
+
 module authProxyContainerApp 'modules/container-app.bicep' = {
   name: 'authProxyContainerAppDeployment'
   params: {
@@ -95,9 +97,14 @@ module authProxyContainerApp 'modules/container-app.bicep' = {
         name: 'entra-client-secret'
         value: proxyEntraClientSecret
       }
+      {
+        name: 'database-url'
+        value: proxyDatabaseUrl
+      }
     ]
     envVars: [
       { name: 'PORT', value: '3000' }
+      { name: 'DATABASE_URL', secretRef: 'database-url' }
       { name: 'ENTRA_TENANT_ID', value: proxyEntraTenantId }
       { name: 'ENTRA_CLIENT_ID', value: proxyEntraClientId }
       { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
