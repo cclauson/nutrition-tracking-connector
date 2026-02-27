@@ -27,6 +27,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: containerAppEnvId
     configuration: {
+      activeRevisionsMode: stickySessionsAffinity == 'sticky' ? 'multiple' : 'single'
       ingress: {
         external: true
         targetPort: targetPort
