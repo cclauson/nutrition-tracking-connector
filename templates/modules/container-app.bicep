@@ -8,6 +8,7 @@ param maxReplicas int = 1
 param targetPort int = 3000
 param registryServer string = ''
 param registryIdentity string = ''
+param stickySessionsAffinity string = 'none'
 param location string = resourceGroup().location
 
 var registries = registryServer != '' ? [
@@ -29,6 +30,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       ingress: {
         external: true
         targetPort: targetPort
+        stickySessions: {
+          affinity: stickySessionsAffinity
+        }
       }
       secrets: secrets
       registries: registries
