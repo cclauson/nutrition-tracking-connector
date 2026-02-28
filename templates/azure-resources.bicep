@@ -121,7 +121,9 @@ module apiContainerApp 'modules/container-app.bicep' = {
     containerAppName: 'vnext-api'
     containerAppEnvId: containerAppEnv.id
     image: apiImage
-    stickySessionsAffinity: 'sticky'
+    stickySessionsAffinity: 'none'
+    minReplicas: 4
+    maxReplicas: 4
     envVars: [
       { name: 'PORT', value: '3000' }
       { name: 'DATABASE_URL', value: apiDatabaseUrl }

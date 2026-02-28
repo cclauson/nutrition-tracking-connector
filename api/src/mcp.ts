@@ -1,13 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { randomUUID } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createEntraAuthProvider } from './auth/entra-auth.js';
-
-const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: McpServer }>();
 
 function getUserId(extra: any): string {
   const sub = extra?.authInfo?.extra?.sub;
@@ -867,57 +863,19 @@ export function createMcpRouter(tenantId: string, entraClientId: string, proxyBa
   // MCP transport endpoints — mounted at /api/mcp by the caller
   const mcpRouter = Router();
 
-  // POST - MCP messages (initialize + subsequent requests)
+  // POST - MCP messages (stateless: fresh transport+server per request)
   mcpRouter.post('/', ...authProvider.middleware, async (req: Request, res: Response) => {
     try {
-      const method = (req.body as any)?.method;
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      console.log('MCP POST:', { method, id: (req.body as any)?.id, sessionId, hasBody: !!req.body, activeSessions: sessions.size });
-
-      // Existing session
-      if (sessionId && sessions.has(sessionId)) {
-        const { transport } = sessions.get(sessionId)!;
-        await transport.handleRequest(req as any, res as any, req.body);
-        return;
-      }
-
-      // New session — must be an initialize request
-      if (sessionId || !isInitializeRequest(req.body)) {
-        console.log('MCP POST rejected:', { sessionId, isInitialize: isInitializeRequest(req.body), body: JSON.stringify(req.body).slice(0, 500) });
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: { code: -32600, message: 'Bad request: expected initialize request without session ID' },
-          id: (req.body as any)?.id ?? null,
-        });
-        return;
-      }
-
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-      });
-
       const server = createMcpServer(prisma);
-
-      transport.onclose = () => {
-        const sid = transport.sessionId;
-        if (sid) {
-          console.log('MCP session closed:', sid);
-          sessions.delete(sid);
-        }
-      };
-
-      transport.onerror = (err) => {
-        console.error('MCP transport error:', err);
-      };
-
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,  // stateless — no sessions
+      });
       await server.connect(transport);
-      console.log('MCP server connected, handling initialize request...');
       await transport.handleRequest(req as any, res as any, req.body);
-
-      if (transport.sessionId) {
-        sessions.set(transport.sessionId, { transport, server });
-        console.log('MCP session created:', transport.sessionId);
-      }
+      res.on('close', () => {
+        transport.close();
+        server.close();
+      });
     } catch (err) {
       console.error('MCP POST handler error:', err);
       if (!res.headersSent) {
@@ -926,28 +884,22 @@ export function createMcpRouter(tenantId: string, entraClientId: string, proxyBa
     }
   });
 
-  // GET - SSE stream for server-to-client notifications
-  mcpRouter.get('/', ...authProvider.middleware, async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    console.log('MCP GET:', { sessionId, hasSession: sessionId ? sessions.has(sessionId) : false });
-    if (!sessionId || !sessions.has(sessionId)) {
-      res.status(400).json({ error: 'Invalid or missing session ID' });
-      return;
-    }
-    const { transport } = sessions.get(sessionId)!;
-    await transport.handleRequest(req as any, res as any);
+  // GET - not supported in stateless mode (SSE streaming requires sessions)
+  mcpRouter.get('/', (req: Request, res: Response) => {
+    res.writeHead(405).end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed.' },
+      id: null,
+    }));
   });
 
-  // DELETE - session termination
-  mcpRouter.delete('/', ...authProvider.middleware, async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    console.log('MCP DELETE:', { sessionId });
-    if (!sessionId || !sessions.has(sessionId)) {
-      res.status(400).json({ error: 'Invalid or missing session ID' });
-      return;
-    }
-    const { transport } = sessions.get(sessionId)!;
-    await transport.handleRequest(req as any, res as any);
+  // DELETE - not supported in stateless mode (no sessions to terminate)
+  mcpRouter.delete('/', (req: Request, res: Response) => {
+    res.writeHead(405).end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed.' },
+      id: null,
+    }));
   });
 
   return { mcpRouter, wellKnownRouter };
