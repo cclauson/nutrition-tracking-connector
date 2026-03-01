@@ -28,3 +28,9 @@ export const msalConfig: Configuration = {
 export const loginRequest = {
   scopes: ["openid", "profile"],
 };
+
+const apiScope = process.env.NEXT_PUBLIC_API_SCOPE ?? "";
+
+export const apiTokenRequest = {
+  scopes: apiScope ? [apiScope] : [],
+};

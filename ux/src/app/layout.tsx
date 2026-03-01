@@ -3,8 +3,8 @@ import "./globals.css";
 import AppInsightsProvider from "../components/AppInsightsProvider";
 
 export const metadata: Metadata = {
-  title: "Nutrition Tracking",
-  description: "Track your meals, monitor your nutrients, and build healthier habits.",
+  title: "Intake",
+  description: "Track nutrition through conversation.",
 };
 
 export default function RootLayout({

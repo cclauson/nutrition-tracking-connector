@@ -1,7 +1,9 @@
 import "./telemetry.js";
 import express from "express";
 import { PrismaClient } from "@prisma/client";
+import { auth } from "express-oauth2-jwt-bearer";
 import { createMcpRouter } from "./mcp.js";
+import { createDashboardRouter } from "./routes/dashboard.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -24,7 +26,16 @@ if (entraTenantId && entraClientId && proxyBaseUrl) {
   // MCP transport at /api/mcp
   app.use("/api/mcp", mcpRouter);
 
+  // Dashboard REST endpoints (JWT-protected)
+  const jwtCheck = auth({
+    audience: entraClientId,
+    issuerBaseURL: `${entraAuthority || `https://login.microsoftonline.com/${entraTenantId}`}/v2.0`,
+    tokenSigningAlg: 'RS256',
+  });
+  app.use('/api/dashboard', jwtCheck, createDashboardRouter(prisma));
+
   console.log("MCP endpoints enabled at /api/mcp");
+  console.log("Dashboard endpoints enabled at /api/dashboard");
 } else {
   console.log("MCP endpoints disabled (ENTRA_TENANT_ID, ENTRA_CLIENT_ID, PROXY_BASE_URL not all set)");
 }

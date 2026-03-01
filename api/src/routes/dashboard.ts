@@ -1,0 +1,111 @@
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+
+const macroFields = ['calories', 'protein', 'fat', 'carbs', 'fiber', 'sugar', 'sodium'] as const;
+
+export function createDashboardRouter(prisma: PrismaClient): Router {
+  const router = Router();
+
+  // GET /api/dashboard/meals?date=YYYY-MM-DD
+  router.get('/meals', async (req, res) => {
+    const userId = (req as any).auth?.payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'Missing user identity' });
+
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd = new Date(date + 'T23:59:59.999Z');
+
+    const entries = await prisma.mealLogEntry.findMany({
+      where: {
+        userId,
+        loggedAt: { gte: dayStart, lte: dayEnd },
+      },
+      include: {
+        items: true,
+        mealSchema: { select: { name: true } },
+      },
+      orderBy: { loggedAt: 'asc' },
+    });
+
+    const totals: Record<string, number> = {};
+    const meals = entries.map(entry => {
+      const items = entry.items.map(item => {
+        for (const field of macroFields) {
+          const val = item[field];
+          if (val != null) {
+            totals[field] = (totals[field] ?? 0) + val;
+          }
+        }
+        return {
+          name: item.name,
+          quantity: item.quantity,
+          calories: item.calories,
+          protein: item.protein,
+          fat: item.fat,
+          carbs: item.carbs,
+        };
+      });
+
+      return {
+        id: entry.id,
+        loggedAt: entry.loggedAt.toISOString(),
+        timeOfDay: entry.timeOfDay,
+        schemaName: entry.mealSchema?.name ?? null,
+        notes: entry.notes,
+        items,
+      };
+    });
+
+    res.json({
+      date,
+      meals,
+      totals: {
+        calories: totals.calories != null ? Math.round(totals.calories) : 0,
+        protein: totals.protein != null ? Math.round(totals.protein * 10) / 10 : 0,
+        fat: totals.fat != null ? Math.round(totals.fat * 10) / 10 : 0,
+        carbs: totals.carbs != null ? Math.round(totals.carbs * 10) / 10 : 0,
+        fiber: totals.fiber != null ? Math.round(totals.fiber * 10) / 10 : 0,
+        sugar: totals.sugar != null ? Math.round(totals.sugar * 10) / 10 : 0,
+        sodium: totals.sodium != null ? Math.round(totals.sodium) : 0,
+      },
+    });
+  });
+
+  // GET /api/dashboard/metrics?days=7
+  router.get('/metrics', async (req, res) => {
+    const userId = (req as any).auth?.payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'Missing user identity' });
+
+    const days = parseInt(req.query.days as string) || 7;
+    const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const metrics = await prisma.metric.findMany({
+      where: { userId },
+      include: {
+        entries: {
+          where: { date: { gte: fromDate } },
+          orderBy: { date: 'desc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json({
+      days,
+      metrics: metrics.map(m => ({
+        id: m.id,
+        name: m.name,
+        unit: m.unit,
+        resolution: m.resolution,
+        type: m.type,
+        entries: m.entries.map(e => ({
+          date: e.date.slice(0, 10),
+          value: e.value,
+          timestamp: e.timestamp.toISOString(),
+        })),
+      })),
+    });
+  });
+
+  return router;
+}

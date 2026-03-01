@@ -2,59 +2,75 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-green-50 to-white">
-      {/* Hero Section */}
-      <section className="max-w-4xl mx-auto px-6 pt-24 pb-16 text-center">
-        <h1 className="text-5xl font-bold text-gray-900 mb-6">
-          Nutrition Tracking
+    <main className="min-h-screen bg-white">
+      {/* Header */}
+      <header className="max-w-5xl mx-auto px-6 pt-8">
+        <span className="text-xl font-semibold text-accent-700 tracking-tight">
+          Intake
+        </span>
+      </header>
+
+      {/* Hero */}
+      <section className="max-w-3xl mx-auto px-6 pt-24 pb-20">
+        <h1 className="text-5xl font-bold text-gray-900 tracking-tight leading-tight mb-6">
+          Track nutrition through conversation
         </h1>
-        <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
-          Track your meals, monitor your nutrients, and build healthier habits
-          with a simple, powerful nutrition tracker.
+        <p className="text-lg text-gray-500 max-w-xl mb-10 leading-relaxed">
+          Tell Claude what you ate. It logs the nutrition data automatically via
+          MCP, and you review everything here.
         </p>
         <Link
           href="/app"
-          className="inline-block px-8 py-4 text-lg font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-lg"
+          className="inline-block px-6 py-3 text-sm font-medium text-white bg-accent-600 rounded-lg hover:bg-accent-700 transition-colors"
         >
-          Log in and use
+          Open dashboard
         </Link>
       </section>
 
-      {/* Features Section */}
-      <section className="max-w-5xl mx-auto px-6 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <div className="text-4xl mb-4">&#127860;</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Log Meals
+      {/* How it works */}
+      <section className="max-w-5xl mx-auto px-6 pb-32">
+        <h2 className="text-sm font-medium text-gray-400 uppercase tracking-widest mb-8">
+          How it works
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div>
+            <p className="text-sm font-medium text-accent-600 mb-2">01</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Tell Claude what you ate
             </h3>
-            <p className="text-gray-600">
-              Quickly record what you eat throughout the day with an intuitive
-              interface.
+            <p className="text-gray-500 text-sm leading-relaxed">
+              Describe your meals in natural language. No forms, no barcode
+              scanning.
             </p>
           </div>
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <div className="text-4xl mb-4">&#128200;</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Track Nutrients
+          <div>
+            <p className="text-sm font-medium text-accent-600 mb-2">02</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              AI logs the data
             </h3>
-            <p className="text-gray-600">
-              See breakdowns of calories, macros, and micronutrients at a
-              glance.
+            <p className="text-gray-500 text-sm leading-relaxed">
+              Claude uses MCP tools to look up nutrition info and save your meal
+              with full macro breakdowns.
             </p>
           </div>
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <div className="text-4xl mb-4">&#127919;</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Reach Goals
+          <div>
+            <p className="text-sm font-medium text-accent-600 mb-2">03</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Review your dashboard
             </h3>
-            <p className="text-gray-600">
-              Set personalized nutrition goals and track your progress over
-              time.
+            <p className="text-gray-500 text-sm leading-relaxed">
+              See daily totals, meal history, and tracked metrics at a glance.
             </p>
           </div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-100 py-8">
+        <p className="text-center text-xs text-gray-400">
+          Powered by Model Context Protocol
+        </p>
+      </footer>
     </main>
   );
 }

@@ -102,6 +102,7 @@ jobs:
             --build-arg NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING="${{ steps.appinsights.outputs.CONNECTION_STRING }}" \
             --build-arg NEXT_PUBLIC_AUTH_CLIENT_ID="${{ steps.spa_app.outputs.APP_ID }}" \
             --build-arg NEXT_PUBLIC_AUTH_AUTHORITY="${{ steps.spa_app.outputs.AUTHORITY }}" \
+            --build-arg NEXT_PUBLIC_API_SCOPE="api://${{ steps.api_app.outputs.APP_ID }}/mcp.access" \
             -t "$TAG" ./ux
           docker push "$TAG"
 
