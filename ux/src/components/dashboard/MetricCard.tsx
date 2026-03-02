@@ -1,5 +1,7 @@
 "use client";
 
+import { LineChart, Line, ResponsiveContainer } from "recharts";
+
 interface MetricEntry {
   date: string;
   value: number | null;
@@ -14,7 +16,29 @@ interface Metric {
   entries: MetricEntry[];
 }
 
+function NumericSparkline({ entries }: { entries: MetricEntry[] }) {
+  const ascending = [...entries].reverse();
+  const data = ascending.map((e) => ({ value: e.value ?? 0 }));
+
+  return (
+    <ResponsiveContainer width="100%" height={80}>
+      <LineChart data={data}>
+        <Line
+          type="monotone"
+          dataKey="value"
+          stroke="#14b8a6"
+          strokeWidth={2}
+          dot={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 export default function MetricCard({ metric }: { metric: Metric }) {
+  const isNumeric = metric.type !== "checkin";
+  const latest = metric.entries[0];
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
       <div className="flex items-baseline gap-2 mb-3">
@@ -25,6 +49,15 @@ export default function MetricCard({ metric }: { metric: Metric }) {
       </div>
       {metric.entries.length === 0 ? (
         <p className="text-xs text-gray-400">No entries yet.</p>
+      ) : isNumeric ? (
+        <>
+          <p className="text-2xl font-semibold text-gray-900 tracking-tight mb-2">
+            {latest?.value ?? "-"}
+          </p>
+          {metric.entries.length > 1 && (
+            <NumericSparkline entries={metric.entries} />
+          )}
+        </>
       ) : (
         <ul className="space-y-1">
           {metric.entries.slice(0, 5).map((entry, i) => (
@@ -34,9 +67,7 @@ export default function MetricCard({ metric }: { metric: Metric }) {
             >
               <span className="text-gray-400 tabular-nums">{entry.date}</span>
               <span className="text-gray-700 font-medium tabular-nums">
-                {metric.type === "checkin"
-                  ? "done"
-                  : entry.value ?? "-"}
+                done
               </span>
             </li>
           ))}

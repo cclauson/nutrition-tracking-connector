@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useApiFetch } from "../../lib/useApiFetch";
 import MealCard from "./MealCard";
 import DailySummary, { DailySummarySkeleton } from "./DailySummary";
+import NutritionChart, { NutritionChartSkeleton } from "./NutritionChart";
 
 interface MealItem {
   name: string | null;
@@ -69,6 +70,9 @@ export default function MealList() {
     return (
       <>
         <DailySummarySkeleton />
+        <div className="mt-6">
+          <NutritionChartSkeleton />
+        </div>
         <div className="mt-8">
           <MealListSkeleton />
         </div>
@@ -82,6 +86,9 @@ export default function MealList() {
         <DailySummary
           totals={{ calories: 0, protein: 0, fat: 0, carbs: 0 }}
         />
+        <div className="mt-6">
+          <NutritionChart />
+        </div>
         <p className="text-sm text-gray-400 mt-8">No meals logged today.</p>
       </>
     );
@@ -90,6 +97,9 @@ export default function MealList() {
   return (
     <>
       <DailySummary totals={data.totals} />
+      <div className="mt-6">
+        <NutritionChart />
+      </div>
       <div className="mt-8 space-y-4">
         {data.meals.map((meal) => (
           <MealCard key={meal.id} meal={meal} />

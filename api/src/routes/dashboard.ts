@@ -107,5 +107,58 @@ export function createDashboardRouter(prisma: PrismaClient): Router {
     });
   });
 
+  // GET /api/dashboard/nutrition-history?days=7
+  router.get('/nutrition-history', async (req, res) => {
+    const userId = (req as any).auth?.payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'Missing user identity' });
+
+    const days = Math.min(parseInt(req.query.days as string) || 7, 90);
+    const now = new Date();
+    const dates: string[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+
+    const rangeStart = new Date(dates[0] + 'T00:00:00.000Z');
+    const rangeEnd = new Date(dates[dates.length - 1] + 'T23:59:59.999Z');
+
+    const entries = await prisma.mealLogEntry.findMany({
+      where: {
+        userId,
+        loggedAt: { gte: rangeStart, lte: rangeEnd },
+      },
+      include: { items: true },
+    });
+
+    const buckets: Record<string, { calories: number; protein: number; fat: number; carbs: number }> = {};
+    for (const date of dates) {
+      buckets[date] = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+    }
+
+    for (const entry of entries) {
+      const date = entry.loggedAt.toISOString().slice(0, 10);
+      const bucket = buckets[date];
+      if (!bucket) continue;
+      for (const item of entry.items) {
+        if (item.calories != null) bucket.calories += item.calories;
+        if (item.protein != null) bucket.protein += item.protein;
+        if (item.fat != null) bucket.fat += item.fat;
+        if (item.carbs != null) bucket.carbs += item.carbs;
+      }
+    }
+
+    const series = dates.map(date => ({
+      date,
+      calories: Math.round(buckets[date].calories),
+      protein: Math.round(buckets[date].protein * 10) / 10,
+      fat: Math.round(buckets[date].fat * 10) / 10,
+      carbs: Math.round(buckets[date].carbs * 10) / 10,
+    }));
+
+    res.json({ days, series });
+  });
+
   return router;
 }
